@@ -69,7 +69,7 @@ Read `docs/DESIGN_SYSTEM.md` before making any visual changes.
 2. **Luôn có link về trang chủ** — mỗi trang con phải có link dẫn người dùng quay lại trang chủ (`/`)
 3. **Ngôn ngữ: tiếng Việt (ưu tiên) hoặc tiếng Anh** — nội dung hiển thị trên trang dùng tiếng Việt hoặc tiếng Anh
 4. **Không trùng ứng dụng con đã có** — kiểm tra danh sách `pages` trong `src/data/pages.ts` trước khi tạo trang mới
-5. **Mỗi trang con hoạt động độc lập (self-contained)** — không sửa các file dùng chung (`App.vue`, `main.css`) ngoài việc thêm route vào `router/index.ts` và thêm entry vào `src/data/pages.ts`
+5. **Mỗi trang con hoạt động độc lập (self-contained)** — không sửa các file dùng chung (`App.vue`, `main.css`, `router/index.ts`) ngoài việc thêm entry vào `src/data/pages.ts` (route được tự động sinh từ mảng `pages`)
 6. **Responsive** — trang phải hiển thị tốt trên mobile
 7. **Không thêm dependency mới** vào `package.json` trừ khi thật sự cần và được approve
 8. **Ghi rõ tên tác giả** — mỗi trang phải có trường `author` trong mảng `pages` ở `src/data/pages.ts`
@@ -78,8 +78,7 @@ Read `docs/DESIGN_SYSTEM.md` before making any visual changes.
 
 1. Create a new directory under `src/views/<your-page-name>/`
 2. Add `index.vue` as the main component inside that directory
-3. Add the route in `src/router/index.ts`
-4. Add the page entry to the `pages` array in `src/data/pages.ts`
+3. Add the page entry to the `pages` array in `src/data/pages.ts` (the route is auto-generated from this entry)
 
 ## Path Aliases
 

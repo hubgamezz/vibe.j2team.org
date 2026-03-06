@@ -1,12 +1,32 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import type { RouteRecordRaw } from 'vue-router'
+import { pages } from '@/data/pages'
 
 const HomePage = () => import('@/views/HomePage.vue')
-const HelloWorld = () => import('@/views/hello-world/index.vue')
 const NotFound = () => import('@/views/NotFound.vue')
 
 const DEFAULT_TITLE = 'vibe.j2team.org - J2TEAM Community Vibe Coding'
 const DEFAULT_DESCRIPTION =
   'Cả nhóm J2TEAM Community vibe code cùng nhau! Mỗi thành viên tạo một trang con, vibe code thoải mái.'
+
+const pageComponents = import.meta.glob<{ default: object }>('@/views/*/index.vue')
+
+const pageRoutes: RouteRecordRaw[] = pages.map((page) => {
+  const componentPath = `/src/views${page.path}/index.vue`
+  const loader = pageComponents[componentPath]
+  if (!loader) {
+    console.warn(`[router] No component found for page "${page.name}" at ${componentPath}`)
+  }
+  return {
+    path: page.path,
+    name: page.path.slice(1),
+    component: loader ? () => loader() : NotFound,
+    meta: {
+      title: `${page.name} - vibe.j2team.org`,
+      description: page.description,
+    },
+  }
+})
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -16,20 +36,11 @@ const router = createRouter({
       name: 'home',
       component: HomePage,
       meta: {
-        title: 'vibe.j2team.org - J2TEAM Community Vibe Coding',
-        description:
-          'Cả nhóm J2TEAM Community vibe code cùng nhau! Mỗi thành viên tạo một trang con, vibe code thoải mái.',
+        title: DEFAULT_TITLE,
+        description: DEFAULT_DESCRIPTION,
       },
     },
-    {
-      path: '/hello-world',
-      name: 'hello-world',
-      component: HelloWorld,
-      meta: {
-        title: 'Hello World - vibe.j2team.org',
-        description: 'Trang mẫu đầu tiên của dự án vibe.j2team.org. Dùng trang này làm template để tạo trang của riêng bạn.',
-      },
-    },
+    ...pageRoutes,
     {
       path: '/:pathMatch(.*)*',
       name: 'not-found',
