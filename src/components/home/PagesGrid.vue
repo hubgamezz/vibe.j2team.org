@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { pages } from '@/data/pages-loader'
 import { padIndex } from '@/data/homepage'
@@ -71,6 +71,21 @@ function goToRandom() {
   const randomPage = list[Math.floor(Math.random() * list.length)]
   if (randomPage) router.push(randomPage.path)
 }
+
+const searchInputRef = ref<HTMLInputElement | null>(null)
+
+function handleKeydown(e: KeyboardEvent) {
+  if (e.key === '/') {
+    const tag = (e.target as HTMLElement)?.tagName
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+    if ((e.target as HTMLElement)?.isContentEditable) return
+    e.preventDefault()
+    searchInputRef.value?.focus()
+  }
+}
+
+onMounted(() => document.addEventListener('keydown', handleKeydown))
+onUnmounted(() => document.removeEventListener('keydown', handleKeydown))
 </script>
 
 <template>
@@ -106,11 +121,17 @@ function goToRandom() {
             />
           </svg>
           <input
+            ref="searchInputRef"
             v-model="searchQuery"
             type="search"
             placeholder="Tìm theo tên, mô tả hoặc tác giả..."
-            class="w-full bg-bg-surface border border-border-default pl-11 pr-4 py-3 text-sm text-text-primary placeholder-text-dim font-body transition-colors duration-200 focus:outline-none focus:border-accent-coral"
+            class="w-full bg-bg-surface border border-border-default pl-11 pr-12 py-3 text-sm text-text-primary placeholder-text-dim font-body transition-colors duration-200 focus:outline-none focus:border-accent-coral"
           />
+          <kbd
+            class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono text-text-dim border border-border-default rounded bg-bg-elevated"
+          >
+            /
+          </kbd>
         </div>
         <button
           :disabled="filteredPages.length === 0"
