@@ -207,6 +207,7 @@ useEventListener(document, 'keydown', handleKeydown)
         </button>
         <button
           v-for="cat in categories"
+          v-show="categoryCounts[cat.id]"
           :key="cat.id"
           class="px-3 py-1.5 text-xs font-display tracking-wide border transition-colors duration-200"
           :class="
