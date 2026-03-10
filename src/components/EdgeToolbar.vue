@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
-import { useTimeoutFn } from '@vueuse/core'
+import { useRoute, useRouter } from 'vue-router'
+import { useClipboard, useTimeoutFn } from '@vueuse/core'
 import { Icon } from '@iconify/vue'
 import { REPO_URL } from '@/data/constants'
+import { pages } from '@/data/pages-loader'
 import { useFavorites } from '@/composables/useFavorites'
 
 const props = defineProps<{
   pagePath: string
 }>()
 
+const route = useRoute()
 const router = useRouter()
 const { toggleFavorite, isFavorite } = useFavorites()
 
@@ -72,6 +74,36 @@ function dismiss() {
   isDismissed.value = true
   isOpen.value = false
 }
+
+function goToRandom() {
+  const others = pages.filter((p) => p.path !== props.pagePath)
+  if (others.length === 0) return
+  const randomPage = others[Math.floor(Math.random() * others.length)]!
+  router.push(randomPage.path)
+}
+
+const { copy, copied } = useClipboard({ copiedDuring: 1500 })
+
+async function sharePage() {
+  const url = window.location.href
+  const title = route.meta.title || document.title
+
+  if (navigator.share) {
+    await navigator.share({ title, url }).catch(() => {})
+    return
+  }
+
+  await copy(url)
+}
+
+function reportIssue() {
+  const pageName = route.meta.title || props.pagePath
+  const title = encodeURIComponent(`[Góp ý] ${pageName}`)
+  const body = encodeURIComponent(
+    `**Trang:** ${props.pagePath}\n**URL:** ${window.location.href}\n\n**Mô tả:**\n\n`,
+  )
+  window.open(`${REPO_URL}/issues/new?title=${title}&body=${body}`, '_blank')
+}
 </script>
 
 <template>
@@ -130,10 +162,30 @@ function dismiss() {
           }}</span>
         </button>
 
+        <!-- Share -->
+        <button class="toolbar-btn group" title="Chia sẻ trang này" @click="sharePage">
+          <Icon icon="lucide:share-2" class="w-5 h-5" />
+          <span class="toolbar-label font-display tracking-wide">{{
+            copied ? 'Đã copy!' : 'Chia sẻ'
+          }}</span>
+        </button>
+
+        <!-- Report / Feedback -->
+        <button class="toolbar-btn group" title="Góp ý về trang này" @click="reportIssue">
+          <Icon icon="lucide:message-circle" class="w-5 h-5" />
+          <span class="toolbar-label font-display tracking-wide">Góp ý</span>
+        </button>
+
         <!-- Home -->
         <button class="toolbar-btn group" title="Về trang chủ" @click="goHome">
           <Icon icon="lucide:home" class="w-5 h-5" />
           <span class="toolbar-label font-display tracking-wide">Trang chủ</span>
+        </button>
+
+        <!-- Random page -->
+        <button class="toolbar-btn group" title="Xem trang ngẫu nhiên" @click="goToRandom">
+          <Icon icon="lucide:shuffle" class="w-5 h-5" />
+          <span class="toolbar-label font-display tracking-wide">Ngẫu nhiên</span>
         </button>
 
         <hr class="border-border-default" />
