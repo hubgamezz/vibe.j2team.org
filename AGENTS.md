@@ -215,9 +215,45 @@ This creates `src/views/<slug>/index.vue` + `meta.ts` with the correct structure
 
 1. Create a new directory under `src/views/<your-page-name>/`
 2. Add `index.vue` as the main component inside that directory
-3. Add `meta.ts` exporting a `PageMeta` object with: `name`, `description`, `author`, `category`, and optionally `facebook`
+3. Add `meta.ts` exporting a `PageMeta` object with: `name`, `description`, `author`, `category`, and optionally `facebook`, `showToolbar`
 4. Available categories: `game`, `tool`, `fun`, `learn`, `spiritual`, `connect`, `other`
 5. The route is auto-generated from the folder name — no router changes needed
+
+## Edge Toolbar
+
+An **EdgeToolbar** (`src/components/EdgeToolbar.vue`) is displayed on all sub-pages by default. It slides out from the right edge of the screen on hover and provides:
+
+- **View source code** — link to the page's source on GitHub
+- **Bookmark** — add/remove the page from favorites (persisted in localStorage)
+- **Home** — navigate back to the homepage
+- **Dismiss** — hide the toolbar for the current session (reappears on page reload)
+
+### Behavior
+
+- The trigger tab is flush to the right edge of the viewport, semi-transparent (`opacity-50`) when idle
+- On hover, it becomes fully opaque and the panel slides out with button labels
+- The toolbar is rendered in `App.vue` outside `<RouterView>`, so it's independent of sub-page content
+- Uses scoped styles and design system tokens (`bg-bg-elevated`, `text-text-secondary`, `border-border-default`, `font-display`)
+
+### Opting out
+
+Authors can disable the toolbar on their page if it interferes with their layout (e.g., a full-screen game). Add `showToolbar: false` to your `meta.ts`:
+
+```ts
+import type { PageMeta } from '@/types/page'
+
+const meta: PageMeta = {
+  name: 'My Page',
+  description: '...',
+  author: 'Author',
+  category: 'game',
+  showToolbar: false, // Disable the edge toolbar on this page
+}
+
+export default meta
+```
+
+Default is `true` — the toolbar is shown unless explicitly disabled.
 
 ## Path Aliases
 
