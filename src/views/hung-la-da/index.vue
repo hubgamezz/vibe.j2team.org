@@ -7,6 +7,15 @@
       {{ muted ? '🔇' : '🔊' }}
     </button>
 
+    <button
+      v-if="screen === 'playing'"
+      class="pause-btn"
+      @click="togglePause"
+      :title="paused ? 'Tiếp tục' : 'Tạm dừng'"
+    >
+      {{ paused ? '▶' : '⏸' }}
+    </button>
+
     <div class="ui">
       <div>
         <div class="lbl">☸ CÔNG ĐỨC</div>
@@ -26,6 +35,15 @@
       <button class="g-btn" @click="startGame">🙏 Bắt đầu</button>
     </div>
 
+    <!-- Màn hình tạm dừng -->
+    <div v-if="paused && screen === 'playing'" class="overlay">
+      <div class="overlay-title">⏸ Tạm dừng</div>
+      <p class="overlay-sub" style="margin-bottom:6px">Công đức hiện tại</p>
+      <div class="overlay-score" style="margin-bottom:20px">{{ score }}</div>
+      <button class="g-btn" @click="togglePause">▶ Tiếp tục</button>
+      <button class="g-btn g-btn-ghost" @click="restartGame" style="margin-top:8px">↩ Chơi lại</button>
+    </div>
+
     <!-- Màn hình kết thúc -->
     <div v-if="screen === 'end'" class="overlay">
       <div class="overlay-title">🙏 Hết giờ!</div>
@@ -37,18 +55,36 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 
+// ── Types ────────────────────────────────────────────────────
+interface Leaf {
+  x: number; y: number; vx: number; vy: number
+  rot: number; rotV: number; w: number; h: number
+  wave: number; waveSpd: number
+  col: string; col2: string
+  caught: boolean; alpha: number; dying: boolean
+}
+interface Spark {
+  x: number; y: number; vx: number; vy: number
+  a: number; r: number; c: string
+}
+interface FloatText {
+  txt: string; x: number; y: number; a: number; size: number
+}
+interface Bowl { x: number; y: number; w: number; h: number }
+
 // ── Canvas & kích thước ──────────────────────────────────────
-const canvasRef = ref(null)
+const canvasRef = ref<HTMLCanvasElement | null>(null)
 const W = 480, H = 580
 
 // ── State ────────────────────────────────────────────────────
-const score     = ref(0)
-const timeLeft  = ref(180)
-const screen    = ref('start')   // 'start' | 'playing' | 'end'
-const muted     = ref(false)
+const score    = ref(0)
+const timeLeft = ref(180)
+const screen   = ref<'start' | 'playing' | 'end'>('start')
+const muted    = ref(false)
+const paused   = ref(false)
 
 const timerDisplay = computed(() => {
   const m = Math.floor(timeLeft.value / 60)
@@ -57,24 +93,27 @@ const timerDisplay = computed(() => {
 })
 
 // ── Game internals ───────────────────────────────────────────
-let ctx        = null
+let ctx:       CanvasRenderingContext2D | null = null
 let frame      = 0
-let startTime  = null
-let rafId      = null
-let leaves     = []
-let sparks     = []
-let floats     = []
-let bowl       = { x: W / 2, y: H - 55, w: 76, h: 28 }
+let startTime: number | null = null
+let pausedAt   = 0
+let rafId:     number | null = null
+let leaves:    Leaf[]        = []
+let sparks:    Spark[]       = []
+let floats:    FloatText[]   = []
+let bowl:      Bowl          = { x: W / 2, y: H - 55, w: 76, h: 28 }
 
 // ── Audio ────────────────────────────────────────────────────
-let audioCtx   = null
-let masterGain = null
-let bgGain     = null
-let bgNodes    = []
+let audioCtx:   AudioContext | null = null
+let masterGain: GainNode | null     = null
+let bgGain:     GainNode | null     = null
+const bgNodes:  OscillatorNode[]    = []
 
-function ensureAudio() {
+function ensureAudio(): void {
   if (audioCtx) return
-  audioCtx   = new (window.AudioContext || window.webkitAudioContext)()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const AC = window.AudioContext ?? (window as any).webkitAudioContext as typeof AudioContext
+  audioCtx   = new AC()
   masterGain = audioCtx.createGain()
   masterGain.gain.value = 1
   masterGain.connect(audioCtx.destination)
@@ -84,17 +123,18 @@ function ensureAudio() {
   startBgMusic()
 }
 
-function startBgMusic() {
+function startBgMusic(): void {
+  if (!audioCtx || !bgGain) return
   ;[130.81, 196.00, 261.63].forEach((freq, i) => {
-    const osc = audioCtx.createOscillator()
-    const g   = audioCtx.createGain()
-    osc.type           = 'sine'
+    const osc = audioCtx!.createOscillator()
+    const g   = audioCtx!.createGain()
+    osc.type            = 'sine'
     osc.frequency.value = freq + i * 0.3
     g.gain.value        = i === 0 ? 0.55 : 0.25
-    osc.connect(g); g.connect(bgGain); osc.start(); bgNodes.push(osc)
+    osc.connect(g); g.connect(bgGain!); osc.start(); bgNodes.push(osc)
 
-    const lfo  = audioCtx.createOscillator()
-    const lfoG = audioCtx.createGain()
+    const lfo  = audioCtx!.createOscillator()
+    const lfoG = audioCtx!.createGain()
     lfo.frequency.value = 0.12 + i * 0.07
     lfoG.gain.value     = 0.08
     lfo.connect(lfoG); lfoG.connect(g.gain); lfo.start(); bgNodes.push(lfo)
@@ -106,76 +146,95 @@ function startBgMusic() {
   scheduleBell()
 }
 
-function scheduleBell() {
+function scheduleBell(): void {
   if (!audioCtx) return
   setTimeout(() => {
-    playBellNote([392, 523.25, 659.25][Math.floor(Math.random() * 3)], 0.09, 2.2)
+    playBellNote([392, 523.25, 659.25][Math.floor(Math.random() * 3)]!, 0.09, 2.2)
     scheduleBell()
   }, (6 + Math.random() * 8) * 1000)
 }
 
-function playBellNote(freq, vol, dur) {
-  if (!audioCtx || muted.value) return
-  ;[[freq, vol, dur], [freq * 2.756, vol * 0.3, dur * 0.6]].forEach(([f, v, d]) => {
-    const o = audioCtx.createOscillator()
-    const g = audioCtx.createGain()
-    o.type = 'sine'; o.frequency.value = f
-    g.gain.setValueAtTime(0, audioCtx.currentTime)
-    g.gain.linearRampToValueAtTime(v, audioCtx.currentTime + 0.01)
-    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + d)
-    o.connect(g); g.connect(masterGain)
-    o.start(); o.stop(audioCtx.currentTime + d + 0.05)
-  })
+function playBellNote(freq: number, vol: number, dur: number): void {
+  if (!audioCtx || !masterGain || muted.value) return
+  const ac = audioCtx
+  const mg = masterGain
+  ;([[freq, vol, dur], [freq * 2.756, vol * 0.3, dur * 0.6]] as [number, number, number][])
+    .forEach(([f, v, d]) => {
+      const o = ac.createOscillator()
+      const g = ac.createGain()
+      o.type = 'sine'; o.frequency.value = f
+      g.gain.setValueAtTime(0, ac.currentTime)
+      g.gain.linearRampToValueAtTime(v, ac.currentTime + 0.01)
+      g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + d)
+      o.connect(g); g.connect(mg)
+      o.start(); o.stop(ac.currentTime + d + 0.05)
+    })
 }
 
-function playTing() {
-  if (!audioCtx || muted.value) return
-  ;[[880, 0.22, 1.4], [880 * 2.65, 0.10, 0.9], [880 * 5.1, 0.05, 0.5]].forEach(([f, v, d]) => {
-    const o = audioCtx.createOscillator()
-    const g = audioCtx.createGain()
-    o.type = 'sine'; o.frequency.value = f
-    g.gain.setValueAtTime(0, audioCtx.currentTime)
-    g.gain.linearRampToValueAtTime(v, audioCtx.currentTime + 0.005)
-    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + d)
-    o.connect(g); g.connect(masterGain)
-    o.start(); o.stop(audioCtx.currentTime + d + 0.05)
-  })
-  const buf  = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.02, audioCtx.sampleRate)
+function playTing(): void {
+  if (!audioCtx || !masterGain || muted.value) return
+  const ac = audioCtx
+  const mg = masterGain
+  ;([[880, 0.22, 1.4], [880 * 2.65, 0.10, 0.9], [880 * 5.1, 0.05, 0.5]] as [number, number, number][])
+    .forEach(([f, v, d]) => {
+      const o = ac.createOscillator()
+      const g = ac.createGain()
+      o.type = 'sine'; o.frequency.value = f
+      g.gain.setValueAtTime(0, ac.currentTime)
+      g.gain.linearRampToValueAtTime(v, ac.currentTime + 0.005)
+      g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + d)
+      o.connect(g); g.connect(mg)
+      o.start(); o.stop(ac.currentTime + d + 0.05)
+    })
+  const buf  = ac.createBuffer(1, ac.sampleRate * 0.02, ac.sampleRate)
   const data = buf.getChannelData(0)
   for (let i = 0; i < data.length; i++)
     data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 3)
-  const src = audioCtx.createBufferSource()
-  const g   = audioCtx.createGain()
+  const src = ac.createBufferSource()
+  const g   = ac.createGain()
   g.gain.value = 0.04
-  src.buffer = buf; src.connect(g); g.connect(masterGain); src.start()
+  src.buffer = buf; src.connect(g); g.connect(mg); src.start()
 }
 
-function playEndBell() {
+function playEndBell(): void {
   if (!audioCtx) return
   ;[261.63, 329.63, 392, 523.25].forEach((f, i) =>
-    setTimeout(() => playBellNote(f, 0.18, 3.5), i * 300)
+    setTimeout(() => playBellNote(f, 0.18, 3.5), i * 300),
   )
 }
 
-function toggleMute() {
+function toggleMute(): void {
   muted.value = !muted.value
   if (masterGain) masterGain.gain.value = muted.value ? 0 : 1
 }
 
+function togglePause(): void {
+  if (screen.value !== 'playing') return
+  paused.value = !paused.value
+  if (paused.value) {
+    // Mute background when paused
+    if (masterGain) masterGain.gain.value = 0
+  } else {
+    // Resume: shift startTime forward by time spent paused
+    if (startTime !== null) startTime += performance.now() - pausedAt
+    if (masterGain) masterGain.gain.value = muted.value ? 0 : 1
+  }
+}
+
 // ── Helpers ──────────────────────────────────────────────────
-function rnd(a, b) { return a + Math.random() * (b - a) }
+function rnd(a: number, b: number): number { return a + Math.random() * (b - a) }
 
 const CANOPY = [
   { x: 100, y: 70  }, { x: 60,  y: 90  }, { x: 140, y: 55  }, { x: 185, y: 80  },
   { x: 30,  y: 110 }, { x: 220, y: 100 }, { x: 80,  y: 130 }, { x: 160, y: 110 },
 ]
 
-function getSpeedMult() { return 1 + Math.min((180 - timeLeft.value) / 60, 2.5) }
+function getSpeedMult(): number { return 1 + Math.min((180 - timeLeft.value) / 60, 2.5) }
 
-function spawnLeaf() {
-  const src  = CANOPY[Math.floor(Math.random() * CANOPY.length)]
-  const hue  = rnd(95, 130), lit = rnd(22, 38), sat = rnd(45, 65)
-  const sm   = getSpeedMult()
+function spawnLeaf(): void {
+  const src = CANOPY[Math.floor(Math.random() * CANOPY.length)]!
+  const hue = rnd(95, 130), lit = rnd(22, 38), sat = rnd(45, 65)
+  const sm  = getSpeedMult()
   leaves.push({
     x: src.x + rnd(-20, 20), y: src.y + rnd(-10, 20),
     vx: rnd(-0.8, 0.8),      vy: rnd(0.5, 1.1) * sm,
@@ -189,190 +248,199 @@ function spawnLeaf() {
 }
 
 // ── Draw ─────────────────────────────────────────────────────
-function drawSky() {
-  const g = ctx.createLinearGradient(0, 0, 0, H)
+function drawSky(): void {
+  const c = ctx!
+  const g = c.createLinearGradient(0, 0, 0, H)
   g.addColorStop(0, '#100800'); g.addColorStop(0.3, '#2a1200')
   g.addColorStop(0.65, '#4a2200'); g.addColorStop(1, '#1a0e00')
-  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H)
-  const mg = ctx.createRadialGradient(W * 0.75, 50, 0, W * 0.75, 50, 120)
+  c.fillStyle = g; c.fillRect(0, 0, W, H)
+  const mg = c.createRadialGradient(W * 0.75, 50, 0, W * 0.75, 50, 120)
   mg.addColorStop(0, 'rgba(255,220,100,0.18)')
   mg.addColorStop(0.4, 'rgba(255,180,60,0.06)')
   mg.addColorStop(1, 'rgba(0,0,0,0)')
-  ctx.fillStyle = mg; ctx.fillRect(0, 0, W, H)
-  ctx.fillStyle = 'rgba(255,240,180,0.7)'
-  ctx.beginPath(); ctx.arc(W * 0.75, 42, 18, 0, Math.PI * 2); ctx.fill()
-  ctx.fillStyle = 'rgba(255,250,220,0.5)'
-  ctx.beginPath(); ctx.arc(W * 0.75, 42, 12, 0, Math.PI * 2); ctx.fill()
+  c.fillStyle = mg; c.fillRect(0, 0, W, H)
+  c.fillStyle = 'rgba(255,240,180,0.7)'
+  c.beginPath(); c.arc(W * 0.75, 42, 18, 0, Math.PI * 2); c.fill()
+  c.fillStyle = 'rgba(255,250,220,0.5)'
+  c.beginPath(); c.arc(W * 0.75, 42, 12, 0, Math.PI * 2); c.fill()
 }
 
-function drawGround() {
-  ctx.fillStyle = '#0a0500'; ctx.fillRect(0, H - 55, W, 55)
-  ctx.fillStyle = '#160b00'
-  ctx.beginPath(); ctx.ellipse(W / 2, H - 30, 200, 25, 0, 0, Math.PI * 2); ctx.fill()
-  ctx.strokeStyle = 'rgba(80,40,0,0.4)'; ctx.lineWidth = 0.5
+function drawGround(): void {
+  const c = ctx!
+  c.fillStyle = '#0a0500'; c.fillRect(0, H - 55, W, 55)
+  c.fillStyle = '#160b00'
+  c.beginPath(); c.ellipse(W / 2, H - 30, 200, 25, 0, 0, Math.PI * 2); c.fill()
+  c.strokeStyle = 'rgba(80,40,0,0.4)'; c.lineWidth = 0.5
   for (let i = -3; i <= 3; i++) {
-    ctx.beginPath(); ctx.ellipse(W / 2 + i * 60, H - 30, 25, 10, 0, 0, Math.PI * 2); ctx.stroke()
+    c.beginPath(); c.ellipse(W / 2 + i * 60, H - 30, 25, 10, 0, 0, Math.PI * 2); c.stroke()
   }
 }
 
-function drawBuddha() {
+function drawBuddha(): void {
+  const c = ctx!
   const bx = W * 0.63, by = H * 0.58
-  ctx.save()
-  const ag = ctx.createRadialGradient(bx, by - 105, 5, bx, by - 105, 90)
+  c.save()
+  const ag = c.createRadialGradient(bx, by - 105, 5, bx, by - 105, 90)
   ag.addColorStop(0, 'rgba(255,190,50,0.3)')
   ag.addColorStop(0.5, 'rgba(255,140,20,0.08)')
   ag.addColorStop(1, 'rgba(0,0,0,0)')
-  ctx.fillStyle = ag; ctx.fillRect(0, 0, W, H)
-  ctx.strokeStyle = 'rgba(255,180,40,0.45)'; ctx.lineWidth = 1.5
-  ctx.beginPath(); ctx.arc(bx, by - 105, 42, 0, Math.PI * 2); ctx.stroke()
-  ctx.strokeStyle = 'rgba(255,180,40,0.12)'; ctx.lineWidth = 10
-  ctx.beginPath(); ctx.arc(bx, by - 105, 48, 0, Math.PI * 2); ctx.stroke()
-  ctx.fillStyle = 'rgba(20,10,0,0.9)'
-  ctx.beginPath(); ctx.ellipse(bx, by + 5, 52, 12, 0, 0, Math.PI * 2); ctx.fill()
-  ctx.beginPath()
-  ctx.moveTo(bx - 50, by + 5); ctx.lineTo(bx + 50, by + 5)
-  ctx.lineTo(bx + 38, by - 10); ctx.lineTo(bx - 38, by - 10)
-  ctx.closePath(); ctx.fill()
-  ctx.strokeStyle = 'rgba(255,180,40,0.25)'; ctx.lineWidth = 0.8
+  c.fillStyle = ag; c.fillRect(0, 0, W, H)
+  c.strokeStyle = 'rgba(255,180,40,0.45)'; c.lineWidth = 1.5
+  c.beginPath(); c.arc(bx, by - 105, 42, 0, Math.PI * 2); c.stroke()
+  c.strokeStyle = 'rgba(255,180,40,0.12)'; c.lineWidth = 10
+  c.beginPath(); c.arc(bx, by - 105, 48, 0, Math.PI * 2); c.stroke()
+  c.fillStyle = 'rgba(20,10,0,0.9)'
+  c.beginPath(); c.ellipse(bx, by + 5, 52, 12, 0, 0, Math.PI * 2); c.fill()
+  c.beginPath()
+  c.moveTo(bx - 50, by + 5); c.lineTo(bx + 50, by + 5)
+  c.lineTo(bx + 38, by - 10); c.lineTo(bx - 38, by - 10)
+  c.closePath(); c.fill()
+  c.strokeStyle = 'rgba(255,180,40,0.25)'; c.lineWidth = 0.8
   for (let i = 0; i < 8; i++) {
     const a = (i / 8) * Math.PI * 2
-    ctx.beginPath(); ctx.ellipse(bx + Math.cos(a) * 30, by + 3 + Math.sin(a) * 6, 8, 4, a, 0, Math.PI * 2); ctx.stroke()
+    c.beginPath(); c.ellipse(bx + Math.cos(a) * 30, by + 3 + Math.sin(a) * 6, 8, 4, a, 0, Math.PI * 2); c.stroke()
   }
-  ctx.fillStyle = 'rgba(15,7,0,0.92)'
-  ctx.beginPath(); ctx.moveTo(bx - 42, by)
-  ctx.bezierCurveTo(bx - 45, by - 50, bx - 22, by - 95, bx - 12, by - 115)
-  ctx.quadraticCurveTo(bx, by - 122, bx + 12, by - 115)
-  ctx.bezierCurveTo(bx + 22, by - 95, bx + 45, by - 50, bx + 42, by)
-  ctx.closePath(); ctx.fill()
-  ctx.beginPath(); ctx.ellipse(bx, by,        50, 18, 0, 0, Math.PI * 2); ctx.fill()
-  ctx.beginPath(); ctx.ellipse(bx, by - 25,   30, 10, 0, 0, Math.PI * 2); ctx.fill()
-  ctx.beginPath(); ctx.ellipse(bx, by - 118,  10,  8, 0, 0, Math.PI * 2); ctx.fill()
-  ctx.beginPath(); ctx.ellipse(bx, by - 133,  20, 23, 0, 0, Math.PI * 2); ctx.fill()
-  ctx.beginPath(); ctx.ellipse(bx, by - 158,   9, 12, 0, 0, Math.PI * 2); ctx.fill()
-  ctx.strokeStyle = 'rgba(255,180,40,0.2)'; ctx.lineWidth = 0.8
-  ctx.beginPath(); ctx.ellipse(bx, by - 133, 20, 23, 0, 0, Math.PI * 2); ctx.stroke()
+  c.fillStyle = 'rgba(15,7,0,0.92)'
+  c.beginPath(); c.moveTo(bx - 42, by)
+  c.bezierCurveTo(bx - 45, by - 50, bx - 22, by - 95, bx - 12, by - 115)
+  c.quadraticCurveTo(bx, by - 122, bx + 12, by - 115)
+  c.bezierCurveTo(bx + 22, by - 95, bx + 45, by - 50, bx + 42, by)
+  c.closePath(); c.fill()
+  c.beginPath(); c.ellipse(bx, by,       50, 18, 0, 0, Math.PI * 2); c.fill()
+  c.beginPath(); c.ellipse(bx, by - 25,  30, 10, 0, 0, Math.PI * 2); c.fill()
+  c.beginPath(); c.ellipse(bx, by - 118, 10,  8, 0, 0, Math.PI * 2); c.fill()
+  c.beginPath(); c.ellipse(bx, by - 133, 20, 23, 0, 0, Math.PI * 2); c.fill()
+  c.beginPath(); c.ellipse(bx, by - 158,  9, 12, 0, 0, Math.PI * 2); c.fill()
+  c.strokeStyle = 'rgba(255,180,40,0.2)'; c.lineWidth = 0.8
+  c.beginPath(); c.ellipse(bx, by - 133, 20, 23, 0, 0, Math.PI * 2); c.stroke()
   const t = frame * 0.012
   for (let i = 0; i < 2; i++) {
-    ctx.strokeStyle = `rgba(255,220,150,${0.06 + i * 0.02})`; ctx.lineWidth = 1.5
-    ctx.beginPath(); ctx.moveTo(bx - 15 + i * 30, by + 10)
+    c.strokeStyle = `rgba(255,220,150,${0.06 + i * 0.02})`; c.lineWidth = 1.5
+    c.beginPath(); c.moveTo(bx - 15 + i * 30, by + 10)
     for (let j = 1; j <= 18; j++)
-      ctx.lineTo(bx - 15 + i * 30 + Math.sin(t + j * 0.45 + i * 2) * 6, by + 10 - j * 10)
-    ctx.stroke()
+      c.lineTo(bx - 15 + i * 30 + Math.sin(t + j * 0.45 + i * 2) * 6, by + 10 - j * 10)
+    c.stroke()
   }
-  ctx.restore()
+  c.restore()
 }
 
-function drawTree() {
-  ctx.save()
+function drawTree(): void {
+  const c = ctx!
+  c.save()
   const tx = 105, ty = H - 55
-  ctx.fillStyle = '#0e0600'
-  ctx.beginPath(); ctx.moveTo(tx - 22, ty)
-  ctx.bezierCurveTo(tx - 18, ty - 90,  tx - 12, ty - 200, tx - 4, ty - 300)
-  ctx.bezierCurveTo(tx + 4,  ty - 302, tx + 18, ty - 200, tx + 22, ty - 90)
-  ctx.lineTo(tx + 22, ty); ctx.closePath(); ctx.fill()
-  ctx.strokeStyle = 'rgba(60,30,0,0.5)'; ctx.lineWidth = 1
+  c.fillStyle = '#0e0600'
+  c.beginPath(); c.moveTo(tx - 22, ty)
+  c.bezierCurveTo(tx - 18, ty - 90,  tx - 12, ty - 200, tx - 4, ty - 300)
+  c.bezierCurveTo(tx + 4,  ty - 302, tx + 18, ty - 200, tx + 22, ty - 90)
+  c.lineTo(tx + 22, ty); c.closePath(); c.fill()
+  c.strokeStyle = 'rgba(60,30,0,0.5)'; c.lineWidth = 1
   for (let i = 0; i < 4; i++) {
-    ctx.beginPath()
-    ctx.moveTo(tx - 12 + i * 7, ty)
-    ctx.quadraticCurveTo(tx - 10 + i * 6, ty - 150, tx - 6 + i * 4, ty - 295)
-    ctx.stroke()
+    c.beginPath()
+    c.moveTo(tx - 12 + i * 7, ty)
+    c.quadraticCurveTo(tx - 10 + i * 6, ty - 150, tx - 6 + i * 4, ty - 295)
+    c.stroke()
   }
-  ;[[tx, ty-290, -0.4, 110],[tx, ty-265, 0.5, 95],[tx, ty-240, -0.9, 80],
-    [tx, ty-215, 1.0, 85],  [tx, ty-310, -0.1, 130]].forEach(([bx, by, ang, len]) => {
-    ctx.lineWidth = 7; ctx.strokeStyle = '#0e0600'
-    ctx.beginPath(); ctx.moveTo(bx, by)
-    ctx.quadraticCurveTo(
-      bx + Math.cos(ang) * len * 0.5, by + Math.sin(ang - Math.PI / 2) * len * 0.4,
-      bx + Math.cos(ang) * len,       by + Math.sin(ang - Math.PI / 2) * len)
-    ctx.stroke()
-  })
-  ;[[tx-45, ty-185],[tx+50, ty-170],[tx-75, ty-200],
-    [tx+85, ty-185],[tx-100, ty-165],[tx+110, ty-175],[tx-25, ty-155]].forEach(([rx, ry]) => {
-    ctx.strokeStyle = 'rgba(12,6,0,0.8)'; ctx.lineWidth = 2
-    ctx.beginPath(); ctx.moveTo(rx, ry)
-    ctx.bezierCurveTo(
-      rx + rnd(-15, 15), ry + (ty - ry) * 0.35,
-      rx + rnd(-12, 12), ry + (ty - ry) * 0.65,
-      rx + rnd(-8, 8),   ty)
-    ctx.stroke()
-  })
-  ;[{x:tx,    y:ty-320, rx:108, ry:65}, {x:tx-85,  y:ty-295, rx:75, ry:50},
+  ;([[tx, ty-290, -0.4, 110],[tx, ty-265, 0.5, 95],[tx, ty-240, -0.9, 80],
+    [tx, ty-215, 1.0, 85],  [tx, ty-310, -0.1, 130]] as [number,number,number,number][])
+    .forEach(([bx, by, ang, len]) => {
+      c.lineWidth = 7; c.strokeStyle = '#0e0600'
+      c.beginPath(); c.moveTo(bx, by)
+      c.quadraticCurveTo(
+        bx + Math.cos(ang) * len * 0.5, by + Math.sin(ang - Math.PI / 2) * len * 0.4,
+        bx + Math.cos(ang) * len,       by + Math.sin(ang - Math.PI / 2) * len)
+      c.stroke()
+    })
+  ;([[tx-45, ty-185],[tx+50, ty-170],[tx-75, ty-200],
+    [tx+85, ty-185],[tx-100, ty-165],[tx+110, ty-175],[tx-25, ty-155]] as [number,number][])
+    .forEach(([rx, ry]) => {
+      c.strokeStyle = 'rgba(12,6,0,0.8)'; c.lineWidth = 2
+      c.beginPath(); c.moveTo(rx, ry)
+      c.bezierCurveTo(
+        rx + rnd(-15, 15), ry + (ty - ry) * 0.35,
+        rx + rnd(-12, 12), ry + (ty - ry) * 0.65,
+        rx + rnd(-8, 8),   ty)
+      c.stroke()
+    })
+  ;([{x:tx,    y:ty-320, rx:108, ry:65}, {x:tx-85,  y:ty-295, rx:75, ry:50},
     {x:tx+85,  y:ty-285, rx:80,  ry:52}, {x:tx-130, y:ty-265, rx:60, ry:42},
     {x:tx+115, y:ty-260, rx:65,  ry:45}, {x:tx-45,  y:ty-350, rx:70, ry:48},
     {x:tx+40,  y:ty-340, rx:75,  ry:52}, {x:tx-15,  y:ty-285, rx:85, ry:55},
-    {x:tx+155, y:ty-240, rx:50,  ry:38}].forEach((c, i) => {
-    ctx.fillStyle = i%3===0 ? 'rgba(12,38,4,0.97)' : i%3===1 ? 'rgba(18,52,6,0.94)' : 'rgba(22,60,8,0.92)'
-    ctx.beginPath(); ctx.ellipse(c.x, c.y, c.rx, c.ry, i * 0.35 - 0.6, 0, Math.PI * 2); ctx.fill()
+    {x:tx+155, y:ty-240, rx:50,  ry:38}]).forEach((cl, i) => {
+    c.fillStyle = i%3===0 ? 'rgba(12,38,4,0.97)' : i%3===1 ? 'rgba(18,52,6,0.94)' : 'rgba(22,60,8,0.92)'
+    c.beginPath(); c.ellipse(cl.x, cl.y, cl.rx, cl.ry, i * 0.35 - 0.6, 0, Math.PI * 2); c.fill()
   })
-  ctx.restore()
+  c.restore()
 }
 
-function drawLeaf(l) {
-  ctx.save(); ctx.translate(l.x, l.y); ctx.rotate(l.rot); ctx.globalAlpha = l.alpha
-  ctx.fillStyle = 'rgba(0,0,0,0.2)'
-  ctx.beginPath(); ctx.ellipse(2, 2, l.w / 2, l.h / 2, 0, 0, Math.PI * 2); ctx.fill()
-  const lg = ctx.createLinearGradient(-l.w / 2, 0, l.w / 2, 0)
+function drawLeaf(l: Leaf): void {
+  const c = ctx!
+  c.save(); c.translate(l.x, l.y); c.rotate(l.rot); c.globalAlpha = l.alpha
+  c.fillStyle = 'rgba(0,0,0,0.2)'
+  c.beginPath(); c.ellipse(2, 2, l.w / 2, l.h / 2, 0, 0, Math.PI * 2); c.fill()
+  const lg = c.createLinearGradient(-l.w / 2, 0, l.w / 2, 0)
   lg.addColorStop(0, l.col); lg.addColorStop(0.5, l.col2); lg.addColorStop(1, l.col)
-  ctx.fillStyle = lg
-  ctx.beginPath()
-  ctx.moveTo(-l.w/2, 0)
-  ctx.quadraticCurveTo(-l.w/4, -l.h/2, 0, -l.h/2)
-  ctx.quadraticCurveTo( l.w/4, -l.h/2, l.w/2, 0)
-  ctx.quadraticCurveTo( l.w/3,  l.h/2, 0, l.h/1.8)
-  ctx.quadraticCurveTo(-l.w/3,  l.h/2, -l.w/2, 0)
-  ctx.closePath(); ctx.fill()
-  ctx.strokeStyle = 'rgba(0,0,0,0.28)'; ctx.lineWidth = 0.8
-  ctx.beginPath(); ctx.moveTo(-l.w/2 + 1, 0); ctx.lineTo(0, l.h/1.8 - 2); ctx.stroke()
-  ctx.strokeStyle = 'rgba(0,0,0,0.14)'; ctx.lineWidth = 0.5
+  c.fillStyle = lg
+  c.beginPath()
+  c.moveTo(-l.w/2, 0)
+  c.quadraticCurveTo(-l.w/4, -l.h/2, 0, -l.h/2)
+  c.quadraticCurveTo( l.w/4, -l.h/2, l.w/2, 0)
+  c.quadraticCurveTo( l.w/3,  l.h/2, 0, l.h/1.8)
+  c.quadraticCurveTo(-l.w/3,  l.h/2, -l.w/2, 0)
+  c.closePath(); c.fill()
+  c.strokeStyle = 'rgba(0,0,0,0.28)'; c.lineWidth = 0.8
+  c.beginPath(); c.moveTo(-l.w/2 + 1, 0); c.lineTo(0, l.h/1.8 - 2); c.stroke()
+  c.strokeStyle = 'rgba(0,0,0,0.14)'; c.lineWidth = 0.5
   for (let i = -2; i <= 2; i++) {
     if (i === 0) continue
-    ctx.beginPath(); ctx.moveTo(0, 0)
-    ctx.lineTo(i * (l.w / 6), i > 0 ? -l.h/2 + 2 : l.h/2); ctx.stroke()
+    c.beginPath(); c.moveTo(0, 0)
+    c.lineTo(i * (l.w / 6), i > 0 ? -l.h/2 + 2 : l.h/2); c.stroke()
   }
-  ctx.restore()
+  c.restore()
 }
 
-function drawBowl() {
+function drawBowl(): void {
+  const c = ctx!
   const { x, y, w, h } = bowl
-  ctx.save()
-  ctx.fillStyle = 'rgba(0,0,0,0.35)'
-  ctx.beginPath(); ctx.ellipse(x, y + h/2 + 6, w/2 + 6, 7, 0, 0, Math.PI * 2); ctx.fill()
-  const bg = ctx.createLinearGradient(x - w/2, 0, x + w/2, 0)
+  c.save()
+  c.fillStyle = 'rgba(0,0,0,0.35)'
+  c.beginPath(); c.ellipse(x, y + h/2 + 6, w/2 + 6, 7, 0, 0, Math.PI * 2); c.fill()
+  const bg = c.createLinearGradient(x - w/2, 0, x + w/2, 0)
   bg.addColorStop(0, '#6b3d1a'); bg.addColorStop(0.3, '#b8713a')
   bg.addColorStop(0.65, '#cc845a'); bg.addColorStop(1, '#6b3d1a')
-  ctx.fillStyle = bg
-  ctx.beginPath(); ctx.moveTo(x - w/2, y - 1)
-  ctx.bezierCurveTo(x - w/2, y + h, x - w/4 + 2, y + h + 2, x, y + h + 2)
-  ctx.bezierCurveTo(x + w/4 - 2, y + h + 2, x + w/2, y + h, x + w/2, y - 1)
-  ctx.closePath(); ctx.fill()
-  const rg = ctx.createLinearGradient(x - w/2, 0, x + w/2, 0)
+  c.fillStyle = bg
+  c.beginPath(); c.moveTo(x - w/2, y - 1)
+  c.bezierCurveTo(x - w/2, y + h, x - w/4 + 2, y + h + 2, x, y + h + 2)
+  c.bezierCurveTo(x + w/4 - 2, y + h + 2, x + w/2, y + h, x + w/2, y - 1)
+  c.closePath(); c.fill()
+  const rg = c.createLinearGradient(x - w/2, 0, x + w/2, 0)
   rg.addColorStop(0, '#7a4820'); rg.addColorStop(0.5, '#d4956a'); rg.addColorStop(1, '#7a4820')
-  ctx.fillStyle = rg
-  ctx.beginPath(); ctx.ellipse(x, y, w/2, h/4, 0, 0, Math.PI * 2); ctx.fill()
-  ctx.fillStyle = 'rgba(25,10,0,0.7)'
-  ctx.beginPath(); ctx.ellipse(x, y, w/2 - 4, h/4 - 2, 0, 0, Math.PI * 2); ctx.fill()
-  ctx.strokeStyle = 'rgba(255,200,80,0.45)'; ctx.lineWidth = 0.8
-  ctx.beginPath(); ctx.arc(x, y + h * 0.45, 5, 0, Math.PI * 2); ctx.stroke()
+  c.fillStyle = rg
+  c.beginPath(); c.ellipse(x, y, w/2, h/4, 0, 0, Math.PI * 2); c.fill()
+  c.fillStyle = 'rgba(25,10,0,0.7)'
+  c.beginPath(); c.ellipse(x, y, w/2 - 4, h/4 - 2, 0, 0, Math.PI * 2); c.fill()
+  c.strokeStyle = 'rgba(255,200,80,0.45)'; c.lineWidth = 0.8
+  c.beginPath(); c.arc(x, y + h * 0.45, 5, 0, Math.PI * 2); c.stroke()
   for (let i = 0; i < 8; i++) {
     const a = (i / 8) * Math.PI * 2
-    ctx.fillStyle = 'rgba(255,200,80,0.4)'
-    ctx.beginPath(); ctx.arc(x + Math.cos(a) * 10, y + h * 0.45 + Math.sin(a) * 5, 1.2, 0, Math.PI * 2); ctx.fill()
+    c.fillStyle = 'rgba(255,200,80,0.4)'
+    c.beginPath(); c.arc(x + Math.cos(a) * 10, y + h * 0.45 + Math.sin(a) * 5, 1.2, 0, Math.PI * 2); c.fill()
   }
-  ctx.strokeStyle = 'rgba(255,220,160,0.5)'; ctx.lineWidth = 1.5
-  ctx.beginPath(); ctx.ellipse(x, y, w/2, h/4, 0, Math.PI * 1.05, Math.PI * 1.95); ctx.stroke()
-  ctx.restore()
+  c.strokeStyle = 'rgba(255,220,160,0.5)'; c.lineWidth = 1.5
+  c.beginPath(); c.ellipse(x, y, w/2, h/4, 0, Math.PI * 1.05, Math.PI * 1.95); c.stroke()
+  c.restore()
 }
 
-function drawSparks() {
+function drawSparks(): void {
+  const c = ctx!
   sparks = sparks.filter(s => s.a > 0)
   sparks.forEach(s => {
-    ctx.save(); ctx.globalAlpha = s.a; ctx.fillStyle = s.c
-    ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill(); ctx.restore()
+    c.save(); c.globalAlpha = s.a; c.fillStyle = s.c
+    c.beginPath(); c.arc(s.x, s.y, s.r, 0, Math.PI * 2); c.fill(); c.restore()
     s.x += s.vx; s.y += s.vy; s.vy += 0.06; s.a -= 0.035; s.r *= 0.96
   })
 }
 
-function addSparks(x, y) {
+function addSparks(x: number, y: number): void {
   for (let i = 0; i < 14; i++) {
     const a = Math.random() * Math.PI * 2, spd = 1 + Math.random() * 2.5
     sparks.push({ x, y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd - 1.5, a: 1, r: 2 + Math.random() * 3, c: `hsl(${rnd(95,130)},60%,${rnd(35,50)}%)` })
@@ -383,45 +451,47 @@ function addSparks(x, y) {
   }
 }
 
-function drawFloats() {
+function drawFloats(): void {
+  const c = ctx!
   floats = floats.filter(f => f.a > 0)
   floats.forEach(f => {
-    ctx.save(); ctx.globalAlpha = f.a; ctx.fillStyle = '#FFD700'
-    ctx.font = `bold ${f.size}px serif`; ctx.textAlign = 'center'
-    ctx.fillText(f.txt, f.x, f.y); ctx.restore()
+    c.save(); c.globalAlpha = f.a; c.fillStyle = '#FFD700'
+    c.font = `bold ${f.size}px serif`; c.textAlign = 'center'
+    c.fillText(f.txt, f.x, f.y); c.restore()
     f.y -= 0.8; f.a -= 0.02
   })
 }
 
-function drawFireflies() {
+function drawFireflies(): void {
+  const c = ctx!
   const t = frame * 0.012
-  ctx.save()
+  c.save()
   for (let i = 0; i < 6; i++) {
     const fx    = (Math.sin(t * 0.6 + i * 1.4) * 0.38 + 0.5) * W
     const fy    = (Math.cos(t * 0.45 + i * 1.0) * 0.28 + 0.38) * H
     const pulse = Math.sin(t * 2.5 + i * 1.2) * 0.5 + 0.5
-    ctx.globalAlpha = pulse * 0.5; ctx.fillStyle = 'rgba(255,230,100,1)'
-    ctx.beginPath(); ctx.arc(fx, fy, 1.8, 0, Math.PI * 2); ctx.fill()
-    ctx.globalAlpha = pulse * 0.12
-    ctx.beginPath(); ctx.arc(fx, fy, 5, 0, Math.PI * 2); ctx.fill()
+    c.globalAlpha = pulse * 0.5; c.fillStyle = 'rgba(255,230,100,1)'
+    c.beginPath(); c.arc(fx, fy, 1.8, 0, Math.PI * 2); c.fill()
+    c.globalAlpha = pulse * 0.12
+    c.beginPath(); c.arc(fx, fy, 5, 0, Math.PI * 2); c.fill()
   }
-  ctx.restore()
+  c.restore()
 }
 
-function checkCatch(l) {
+function checkCatch(l: Leaf): boolean {
   return Math.abs(l.x - bowl.x) < bowl.w / 2 - 4 &&
     l.y > bowl.y - bowl.h / 4 && l.y < bowl.y + bowl.h / 4
 }
 
 // ── Game loop ────────────────────────────────────────────────
-function updateTimer(now) {
+function updateTimer(now: number): void {
   if (!startTime) startTime = now
   timeLeft.value = Math.max(0, 180 - (now - startTime) / 1000)
   if (timeLeft.value <= 0) endGame()
 }
 
-function update(now) {
-  if (screen.value !== 'playing') return
+function update(now: number): void {
+  if (screen.value !== 'playing' || paused.value) return
   updateTimer(now)
   const spawnRate = Math.max(20, 75 - Math.floor((180 - timeLeft.value) / 5) * 3)
   if (frame % spawnRate === 0 || leaves.length < 3) spawnLeaf()
@@ -442,39 +512,48 @@ function update(now) {
   leaves = leaves.filter(l => l.alpha > 0)
 }
 
-function render() {
-  ctx.clearRect(0, 0, W, H)
+function render(): void {
+  if (!ctx) return
+  const c = ctx
+  c.clearRect(0, 0, W, H)
   drawSky(); drawFireflies(); drawBuddha(); drawTree(); drawGround()
   leaves.forEach(drawLeaf); drawSparks(); drawBowl(); drawFloats()
   if (screen.value === 'playing') {
     const sm = getSpeedMult()
     if (sm > 1.5) {
-      ctx.save(); ctx.globalAlpha = 0.25; ctx.fillStyle = '#ff6600'
-      ctx.font = '11px serif'; ctx.textAlign = 'right'
-      ctx.fillText(`×${sm.toFixed(1)} tốc độ`, W - 8, 16); ctx.restore()
+      c.save(); c.globalAlpha = 0.25; c.fillStyle = '#ff6600'
+      c.font = '11px serif'; c.textAlign = 'right'
+      c.fillText(`×${sm.toFixed(1)} tốc độ`, W - 8, 16); c.restore()
     }
   }
 }
 
-function loop(now) {
+function loop(now: number): void {
+  if (paused.value) {
+    pausedAt = now
+    render()
+    rafId = requestAnimationFrame(loop)
+    return
+  }
   frame++; update(now); render()
   rafId = requestAnimationFrame(loop)
 }
 
 // ── Game flow ────────────────────────────────────────────────
-function startGame() {
+function startGame(): void {
   ensureAudio()
   screen.value = 'playing'
 }
 
-function endGame() {
+function endGame(): void {
   if (screen.value === 'end') return
   screen.value = 'end'
   playEndBell()
 }
 
-function restartGame() {
+function restartGame(): void {
   ensureAudio()
+  paused.value = false
   score.value = 0; frame = 0; timeLeft.value = 180; startTime = null
   leaves = []; sparks = []; floats = []
   bowl   = { x: W / 2, y: H - 55, w: 76, h: 28 }
@@ -482,31 +561,47 @@ function restartGame() {
 }
 
 // ── Lifecycle ────────────────────────────────────────────────
-function onMouseMove(e) {
-  const r = canvasRef.value.getBoundingClientRect()
+function onKeyDown(e: KeyboardEvent): void {
+  if (e.code === 'Space' || e.code === 'Escape') {
+    e.preventDefault()
+    togglePause()
+  }
+}
+
+function onMouseMove(e: MouseEvent): void {
+  const canvas = canvasRef.value
+  if (!canvas) return
+  const r = canvas.getBoundingClientRect()
   bowl.x = Math.max(bowl.w / 2, Math.min(W - bowl.w / 2, (e.clientX - r.left) * (W / r.width)))
 }
-function onTouchMove(e) {
+function onTouchMove(e: TouchEvent): void {
   e.preventDefault()
-  const r = canvasRef.value.getBoundingClientRect()
-  bowl.x = Math.max(bowl.w / 2, Math.min(W - bowl.w / 2, (e.touches[0].clientX - r.left) * (W / r.width)))
+  const canvas = canvasRef.value
+  if (!canvas) return
+  const r = canvas.getBoundingClientRect()
+  bowl.x = Math.max(bowl.w / 2, Math.min(W - bowl.w / 2, (e.touches[0]!.clientX - r.left) * (W / r.width)))
 }
-function onTouchStart(e) {
+function onTouchStart(e: TouchEvent): void {
   e.preventDefault()
-  const r = canvasRef.value.getBoundingClientRect()
-  bowl.x = Math.max(bowl.w / 2, Math.min(W - bowl.w / 2, (e.touches[0].clientX - r.left) * (W / r.width)))
+  const canvas = canvasRef.value
+  if (!canvas) return
+  const r = canvas.getBoundingClientRect()
+  bowl.x = Math.max(bowl.w / 2, Math.min(W - bowl.w / 2, (e.touches[0]!.clientX - r.left) * (W / r.width)))
 }
 
 onMounted(() => {
-  const canvas    = canvasRef.value
-  canvas.width    = W
-  canvas.height   = H
-  ctx             = canvas.getContext('2d')
+  const canvas = canvasRef.value
+  if (!canvas) return
+  canvas.width  = W
+  canvas.height = H
+  ctx = canvas.getContext('2d')
   canvas.addEventListener('mousemove',  onMouseMove)
   canvas.addEventListener('touchmove',  onTouchMove,  { passive: false })
   canvas.addEventListener('touchstart', onTouchStart, { passive: false })
+  window.addEventListener('keydown', onKeyDown)
   rafId = requestAnimationFrame(loop)
 })
+
 
 onUnmounted(() => {
   if (rafId) cancelAnimationFrame(rafId)
@@ -516,7 +611,8 @@ onUnmounted(() => {
     canvas.removeEventListener('touchmove',  onTouchMove)
     canvas.removeEventListener('touchstart', onTouchStart)
   }
-  bgNodes.forEach(n => { try { n.stop() } catch (_) {} })
+  window.removeEventListener('keydown', onKeyDown)
+  bgNodes.forEach(n => { try { n.stop() } catch { /* already stopped */ } })
   if (audioCtx) audioCtx.close()
 })
 </script>
@@ -655,5 +751,30 @@ canvas {
 
 .g-btn:hover {
   background: rgba(200, 130, 40, 0.45);
+}
+
+.pause-btn {
+  position: absolute;
+  top: 6px;
+  left: 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 17px;
+  color: #c8a05a;
+  padding: 2px 6px;
+  z-index: 20;
+}
+
+.g-btn-ghost {
+  background: rgba(80, 40, 10, 0.2);
+  border-color: rgba(200, 160, 90, 0.4);
+  color: rgba(255, 215, 0, 0.7);
+  font-size: 14px;
+  padding: 8px 28px;
+}
+
+.g-btn-ghost:hover {
+  background: rgba(120, 60, 15, 0.35);
 }
 </style>
