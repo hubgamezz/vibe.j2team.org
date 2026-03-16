@@ -33,6 +33,7 @@
       <p class="overlay-sub">Dùng bát để hứng lá đa rơi</p>
       <p class="overlay-sub">tích lũy công đức trong 3 phút</p>
       <button class="g-btn" @click="startGame">🙏 Bắt đầu</button>
+      <a class="home-link" href="https://vibe.j2team.org" target="_blank" rel="noopener"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:6px;margin-bottom:2px"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>Trang chủ</a>
     </div>
 
     <!-- Màn hình tạm dừng -->
@@ -42,6 +43,7 @@
       <div class="overlay-score" style="margin-bottom:20px">{{ score }}</div>
       <button class="g-btn" @click="togglePause">▶ Tiếp tục</button>
       <button class="g-btn g-btn-ghost" @click="restartGame" style="margin-top:8px">↩ Chơi lại</button>
+      <a class="home-link" href="https://vibe.j2team.org" target="_blank" rel="noopener"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:6px;margin-bottom:2px"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>Trang chủ</a>
     </div>
 
     <!-- Màn hình kết thúc -->
@@ -618,12 +620,14 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* ── Reset ────────────────────────────────────────────────── */
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 
+/* ── Page wrapper — full screen, centers the game ─────────── */
 .page {
   position: fixed;
   inset: 0;
@@ -634,6 +638,16 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
+/* ── Game container ───────────────────────────────────────── */
+/*
+  Width  = min(480px, 100vw)
+  Height = determined by canvas aspect-ratio + UI bar (~46px)
+  In landscape: limit width so total height fits inside 100dvh
+  Canvas aspect ratio: 480/580 ≈ 0.8276
+  Total wrap height = canvasHeight + 46px UI
+  => canvasWidth = (100dvh - 46px) * (480/580)
+  => wrap width  = min(480px, 100vw, (100dvh - 46px) * 480/580)
+*/
 .wrap {
   display: flex;
   flex-direction: column;
@@ -641,57 +655,69 @@ onUnmounted(() => {
   background: #0d0700;
   user-select: none;
   position: relative;
-  width: 480px;
-  max-width: 100vw;
-  max-height: 100dvh;
+  width: min(480px, 100vw, calc((100dvh - 46px) * 480 / 580));
 }
 
+/* ── Canvas ───────────────────────────────────────────────── */
 canvas {
   display: block;
   cursor: none;
   touch-action: none;
   width: 100%;
-  max-width: 480px;
+  aspect-ratio: 480 / 580;
+  height: auto;
 }
 
-.mute-btn {
+/* ── Top control buttons (mute / pause) ───────────────────── */
+.mute-btn,
+.pause-btn {
   position: absolute;
-  top: 6px;
-  right: 10px;
+  top: 0;
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 17px;
   color: #c8a05a;
-  padding: 2px 6px;
   z-index: 20;
+  /* 44×44 touch target */
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  -webkit-tap-highlight-color: transparent;
 }
 
+.mute-btn  { right: 0; }
+.pause-btn { left: 0; }
+
+/* ── Score / timer bar ────────────────────────────────────── */
 .ui {
   width: 100%;
-  max-width: 480px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 6px 16px;
+  padding: 4px 16px;
   background: #0d0700;
-  box-sizing: border-box;
+  min-height: 46px;
 }
 
 .lbl {
   color: #c8a05a;
   font-family: serif;
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: 1px;
 }
 
 .pts {
   color: #ffd700;
   font-family: serif;
-  font-size: 22px;
+  font-size: 20px;
   font-weight: bold;
+  line-height: 1.2;
 }
 
+/* ── Overlay screens ──────────────────────────────────────── */
 .overlay {
   display: flex;
   position: absolute;
@@ -702,21 +728,22 @@ canvas {
   justify-content: center;
   flex-direction: column;
   z-index: 10;
+  padding: 16px;
 }
 
 .overlay-title {
   color: #ffd700;
   font-family: serif;
-  font-size: 28px;
+  font-size: clamp(20px, 5vw, 28px);
   font-weight: bold;
   text-align: center;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .overlay-sub {
   color: #c8a05a;
   font-family: serif;
-  font-size: 13px;
+  font-size: clamp(12px, 3vw, 13px);
   margin-bottom: 4px;
   text-align: center;
 }
@@ -724,57 +751,76 @@ canvas {
 .overlay-label {
   color: #c8a05a;
   font-family: serif;
-  font-size: 15px;
+  font-size: clamp(13px, 3.5vw, 15px);
   margin-bottom: 6px;
 }
 
 .overlay-score {
   color: #ffd700;
   font-family: serif;
-  font-size: 52px;
+  font-size: clamp(36px, 10vw, 52px);
   font-weight: bold;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
+  line-height: 1;
 }
 
+/* ── Buttons ──────────────────────────────────────────────── */
 .g-btn {
   background: rgba(180, 100, 20, 0.3);
   border: 1px solid #c8a05a;
   color: #ffd700;
   font-family: serif;
-  font-size: 16px;
+  font-size: clamp(14px, 3.5vw, 16px);
   padding: 10px 32px;
   cursor: pointer;
   border-radius: 6px;
   margin-top: 10px;
   transition: background 0.2s;
+  min-width: 140px;
+  min-height: 44px;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.g-btn:hover {
-  background: rgba(200, 130, 40, 0.45);
-}
-
-.pause-btn {
-  position: absolute;
-  top: 6px;
-  left: 10px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 17px;
-  color: #c8a05a;
-  padding: 2px 6px;
-  z-index: 20;
-}
+.g-btn:hover   { background: rgba(200, 130, 40, 0.45); }
+.g-btn:active  { background: rgba(220, 150, 50, 0.55); }
 
 .g-btn-ghost {
   background: rgba(80, 40, 10, 0.2);
   border-color: rgba(200, 160, 90, 0.4);
   color: rgba(255, 215, 0, 0.7);
-  font-size: 14px;
+  font-size: clamp(12px, 3vw, 14px);
   padding: 8px 28px;
 }
 
-.g-btn-ghost:hover {
-  background: rgba(120, 60, 15, 0.35);
+.g-btn-ghost:hover { background: rgba(120, 60, 15, 0.35); }
+
+/* ── Home link button ─────────────────────────────────────── */
+.home-link {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 14px;
+  color: #c8a05a;
+  font-family: serif;
+  font-size: clamp(12px, 3vw, 13px);
+  letter-spacing: 0.5px;
+  text-decoration: none;
+  border: 1px solid rgba(200, 160, 90, 0.45);
+  border-radius: 6px;
+  padding: 8px 20px;
+  min-height: 44px;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.home-link:hover  { color: #ffd700; border-color: rgba(255,215,0,0.6); background: rgba(180,100,20,0.2); }
+.home-link:active { background: rgba(200,120,30,0.3); }
+
+/* ── Landscape: compact overlay layout ───────────────────── */
+@media (max-height: 500px) and (orientation: landscape) {
+  .overlay-title  { font-size: 18px; margin-bottom: 6px; }
+  .overlay-score  { font-size: 32px; margin-bottom: 10px; }
+  .overlay-sub    { display: none; }
+  .g-btn          { padding: 7px 24px; margin-top: 6px; min-height: 40px; }
+  .home-link      { padding: 6px 16px; margin-top: 8px; min-height: 40px; }
 }
 </style>
