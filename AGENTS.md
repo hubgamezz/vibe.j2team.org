@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-vibe.j2team.org — A collaborative vibe coding project by J2TEAM Community with 160+ sub-apps. The homepage acts as a launcher linking to sub-apps, where each community member creates their own page.
+vibe.j2team.org — A collaborative vibe coding project by J2TEAM Community with 190+ sub-apps. The homepage acts as a launcher linking to sub-apps, where each community member creates their own page.
 
 ## Tech Stack
 
@@ -12,21 +12,23 @@ vibe.j2team.org — A collaborative vibe coding project by J2TEAM Community with
 - Tailwind CSS v4 (via `@tailwindcss/vite`)
 - Vue Router 5
 - Pinia 3
-- @unhead/vue (document head/meta management)
+- @unhead/vue 2 (document head/meta management)
 - @vueuse/core 14 — 200+ Vue composables (useMouse, useClipboard, useDark, useStorage, useIntersectionObserver, useLocalStorage, useMediaQuery, useWindowSize, etc.)
-- @iconify/vue — 200,000+ icons from 150+ icon sets via `<Icon icon="icon-set:icon-name" />` component
+- @iconify/vue 5 — 200,000+ icons from 150+ icon sets via `<Icon icon="icon-set:icon-name" />` component
 - html-to-image — capture DOM nodes as PNG/JPEG/SVG
+- shiki 4 — syntax highlighting
 
 ## Setup & Build
 
 ```sh
 pnpm install
 pnpm dev          # Dev server
-pnpm build        # Type-check + production build
+pnpm build        # Type-check + production build (+ OG pages + sitemap generation)
 pnpm test:unit    # Unit tests with Vitest
 pnpm lint         # Lint with oxlint + ESLint (with --fix)
 pnpm lint:ci      # Lint without --fix (for CI)
 pnpm format       # Format with oxfmt
+pnpm create:page <slug>  # Scaffold a new page (interactive or with flags)
 ```
 
 ## Project Structure
@@ -41,14 +43,19 @@ src/
   data/
     pages-loader.ts          # Fetches pre-generated pages.json (built by Vite plugin)
     categories.ts            # Category definitions (game, tool, creative, fun, learn, health, finance, spiritual, connect, other)
+    authors.ts               # Author aggregation from pages (leaderboard, author pages)
     homepage.ts              # Homepage content data (tech stack, rules, products)
     constants.ts             # Shared constants
   components/
     home/                    # Homepage section components (HeroSection, PagesGrid, etc.)
     BackToTop.vue
-    EdgeToolbar.vue          # Slide-out toolbar on sub-pages (source link, bookmark, home)
+    EdgeToolbar.vue          # Slide-out toolbar on sub-pages (source link, bookmark, home, comments)
     ErrorBoundary.vue        # Error boundary wrapper
     FavoriteButton.vue       # Bookmark/favorite toggle button
+    GiscusModal.vue          # Giscus comments modal (per-page discussions)
+  composables/
+    useFavorites.ts          # Bookmark/favorite state (localStorage via VueUse)
+    useDraggable.ts          # Drag behavior composable
   stores/                    # Pinia stores (currently unused — pages manage state locally)
   views/
     HomePage.vue             # Landing page / launcher
@@ -66,6 +73,7 @@ src/
 
 Routes are auto-generated from a pre-built `public/data/pages.json` file:
 - A Vite plugin (`scripts/generate-pages-json.mjs`) scans all `src/views/*/meta.ts` files and writes `public/data/pages.json` at build start and whenever a `meta.ts` file changes during dev
+- Post-build scripts generate OG image pages (`scripts/generate-og-pages.mjs`) and sitemap with sub-sitemaps + robots.txt (`scripts/generate-sitemap.mjs`)
 - `src/data/pages-loader.ts` fetches this JSON at runtime (bypasses Rollup bundling)
 - Path is derived from folder name (e.g., `src/views/my-app/` → `/my-app`)
 - Featured pages are hand-picked in `scripts/generate-pages-json.mjs` and pinned to top of homepage
