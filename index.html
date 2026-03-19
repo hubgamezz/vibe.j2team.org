@@ -19,6 +19,16 @@
     <!-- Preload pages.json to break JS→fetch chain -->
     <link rel="preload" href="/data/pages.json" as="fetch" crossorigin>
     <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anybody:wght@500;600;700;800&family=Be+Vietnam+Pro:wght@400;500;600&display=swap"></noscript>
+    <!-- Google Analytics -->
+    <link rel="dns-prefetch" href="https://www.googletagmanager.com">
+    <link rel="dns-prefetch" href="https://www.google-analytics.com">
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-YKJE90114C"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-YKJE90114C');
+    </script>
   </head>
   <body>
     <div id="app"></div>

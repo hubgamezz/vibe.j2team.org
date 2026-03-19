@@ -441,7 +441,7 @@ const renderLensArrows = (lens: Lens) => {
   const n = new Vector2(-dir.y, dir.x)
   const size = 15
   const isConverging = lens.focalLength > 0
-  const dirSign = isConverging ? -1 : 1
+  const dirSign = isConverging ? 1 : -1
 
   const arr1p1 = p1.add(dir.mul(size * dirSign)).add(n.mul(size * 0.3))
   const arr1p2 = p1.add(dir.mul(size * dirSign)).add(n.mul(-size * 0.3))

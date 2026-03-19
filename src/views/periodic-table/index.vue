@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { RouterLink } from 'vue-router'
 import {
   elements,
   CATEGORY_COLORS,
@@ -43,6 +44,13 @@ function toggleCategory(cat: ElementCategory) {
 <template>
   <div class="min-h-screen bg-bg-deep text-text-primary font-body px-4 py-8">
     <div class="max-w-[1280px] mx-auto">
+      <!-- Back button -->
+      <RouterLink
+        to="/"
+        class="inline-flex items-center gap-2 border border-border-default bg-bg-surface px-3 py-2 text-xs text-text-secondary transition-all duration-300 hover:-translate-y-1 hover:border-accent-coral hover:bg-bg-elevated hover:text-text-primary mb-4"
+      >
+        &larr; Về trang chủ
+      </RouterLink>
       <!-- Header -->
       <h1 class="text-3xl md:text-4xl font-display font-bold text-center mb-2">
         <span class="text-accent-coral">//</span> Bảng Tuần Hoàn Các Nguyên Tố

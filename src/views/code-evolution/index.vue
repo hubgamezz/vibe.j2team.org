@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onUnmounted, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { RouterLink } from 'vue-router'
 import { LANGUAGES, RECIPES } from './data'
 
 interface WorkspaceItem {
@@ -11,7 +11,6 @@ interface WorkspaceItem {
   isHighlight: boolean
 }
 
-const router = useRouter()
 const unlockedIds = ref<string[]>(['binary', 'logic', 'math', 'internet'])
 const workspaceItems = ref<WorkspaceItem[]>([])
 let instanceCounter = 0
@@ -70,7 +69,6 @@ const giveHint = () => {
 
 // --- LOGIC GAME CŨ CỦA BẠN ---
 const isVictory = computed(() => unlockedIds.value.length === Object.keys(LANGUAGES).length)
-const goHome = () => router.push('/')
 
 const addItem = (id: string, x: number, y: number) => {
   const newItem = { id, x, y, instanceId: instanceCounter++, isHighlight: false }
@@ -184,7 +182,7 @@ onUnmounted(() => {
 
     <div class="workspace" @dragover.prevent @drop="onDrop">
       <div class="top-nav">
-        <button @click="goHome" class="back-btn">← SẢNH</button>
+        <RouterLink to="/" class="back-btn">← SẢNH</RouterLink>
         <div class="status-badge" :class="{ 'victory-glow': isVictory }">
           KHÁM PHÁ: {{ unlockedIds.length }} / {{ Object.keys(LANGUAGES).length }}
         </div>
@@ -250,7 +248,7 @@ onUnmounted(() => {
     <div v-if="isVictory" class="overlay victory">
       <div class="modal">
         <h1 class="cyan-text">🏆 CHIẾN THẮNG</h1>
-        <button @click="goHome" class="btn-cyan">VỀ SẢNH</button>
+        <RouterLink to="/" class="btn-cyan">VỀ SẢNH</RouterLink>
       </div>
     </div>
   </div>

@@ -110,7 +110,7 @@ const router = createRouter({
   ],
 })
 
-router.onError((error, to) => {
+export function handleChunkError(error: Error, to: { fullPath: string }) {
   const isChunkError =
     error.message.includes('Failed to fetch dynamically imported module') ||
     error.message.includes('Importing a module script failed') ||
@@ -125,6 +125,11 @@ router.onError((error, to) => {
 
   // Full page reload to get fresh assets after new deployment
   window.location.href = to.fullPath
+}
+
+router.onError((error, to) => {
+  if (!to) return
+  handleChunkError(error, to)
 })
 
 export default router

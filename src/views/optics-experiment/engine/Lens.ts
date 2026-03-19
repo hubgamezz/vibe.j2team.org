@@ -72,22 +72,18 @@ export class Lens extends OpticalObject {
     }
 
     // Thin lens deflection:
-    // The lens deflects the ray by an amount proportional to the
-    // displacement of the hit point from the optical center.
+    // The lens deflects the ray's transverse velocity (along the lens surface)
+    // proportionally to the distance from the optical center and the ray's axial velocity.
     //
-    // For a thin lens: θ_deflection = -h / f
-    // where h = signed distance from hit point to center along the lens,
-    // and f = focal length.
-    //
-    // This is equivalent to: the outgoing ray direction = d + deflection
-    // where deflection is along the lens axis (perpendicular to the lens surface).
-
+    // This matches the transfer matrix method and guarantees absolute reversibility.
     const lensDir = this.p2.sub(this.p1).normalize()
-    const h = I.sub(C).dot(lensDir) // signed offset along lens
+    const h = I.sub(C).dot(lensDir) // signed offset along lens surface
 
-    // Deflection vector: push the ray toward (converging) or away from (diverging) the axis
-    // The deflection is along the lens surface direction
-    const deflection = lensDir.mul(-h / this.focalLength)
+    // Axial component of the ray direction (always positive as forward points along ray)
+    const u = d.dot(forward)
+
+    // Deflection is applied ALONG the lens surface (modifying transverse direction)
+    const deflection = lensDir.mul((-h / this.focalLength) * u)
 
     let newDir = d.add(deflection).normalize()
 
