@@ -140,8 +140,16 @@ function initScWidget(): void {
   })
 }
 
-function scPlay(): void  { if (scWidget && !muted.value) scWidget.play() }
-function scPause(): void { if (scWidget) scWidget.pause() }
+function scPlay(): void {
+  if (scWidget && !muted.value && scIframe.value?.contentWindow) {
+    try { scWidget.play() } catch { /* iframe not ready */ }
+  }
+}
+function scPause(): void {
+  if (scWidget && scIframe.value?.contentWindow) {
+    try { scWidget.pause() } catch { /* iframe not ready */ }
+  }
+}
 
 function playBellNote(freq: number, vol: number, dur: number): void {
   if (!audioCtx || !masterGain || muted.value) return
