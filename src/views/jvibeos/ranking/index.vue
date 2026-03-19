@@ -1,25 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 import { RouterLink } from 'vue-router'
-import type { CategoryId } from '@/data/categories'
-import { processPages, formatViews, type AppItem } from '../composables/useApps'
+import { formatViews } from '../composables/useApps'
+import { usePagesLoader } from '../composables/usePagesLoader'
 
-const pagesData = ref<AppItem[]>([])
-const isLoading = ref(true)
+const { pagesData, isLoading } = usePagesLoader()
 const activeTab = ref<'views' | 'apps' | 'rating'>('apps')
-
-onMounted(async () => {
-  const pagesResponse = await fetch('/data/pages.json')
-  const rawPages = (await pagesResponse.json()) as {
-    name: string
-    description: string
-    author: string
-    path: string
-    category: CategoryId
-  }[]
-  pagesData.value = processPages(rawPages)
-  isLoading.value = false
-})
 
 interface AuthorStats {
   name: string

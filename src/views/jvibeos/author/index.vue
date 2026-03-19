@@ -1,27 +1,13 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { computed } from 'vue'
 import { useRoute, RouterLink } from 'vue-router'
-import type { CategoryId } from '@/data/categories'
-import { processPages, formatViews, type AppItem } from '../composables/useApps'
+import { formatViews } from '../composables/useApps'
+import { usePagesLoader } from '../composables/usePagesLoader'
 
 const route = useRoute()
-const pagesData = ref<AppItem[]>([])
-const isLoading = ref(true)
+const { pagesData, isLoading } = usePagesLoader()
 
 const authorName = computed(() => (route.query.author as string) || '')
-
-onMounted(async () => {
-  const pagesResponse = await fetch('/data/pages.json')
-  const rawPages = (await pagesResponse.json()) as {
-    name: string
-    description: string
-    author: string
-    path: string
-    category: CategoryId
-  }[]
-  pagesData.value = processPages(rawPages)
-  isLoading.value = false
-})
 
 const authorApps = computed(() => {
   if (!authorName.value) return []
