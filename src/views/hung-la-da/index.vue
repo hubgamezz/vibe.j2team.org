@@ -2,6 +2,12 @@
   <div class="page">
   <div class="wrap">
     <canvas ref="canvasRef" />
+    <iframe
+      ref="scIframe"
+      src="https://w.soundcloud.com/player/?url=https%3A%2F%2Fapi.soundcloud.com%2Ftracks%2F624179754&auto_play=false&hide_related=true&show_comments=false&show_user=false&show_reposts=false&visual=false"
+      style="display:none"
+      allow="autoplay"
+    />
 
     <button class="mute-btn" @click="toggleMute" :title="muted ? 'Bật nhạc' : 'Tắt nhạc'">
       {{ muted ? '🔇' : '🔊' }}
@@ -31,7 +37,7 @@
     <div v-if="screen === 'start'" class="overlay">
       <div class="overlay-title">🍃 Hứng Lá Đa</div>
       <p class="overlay-sub">Dùng bát để hứng lá đa rơi</p>
-      <p class="overlay-sub">tích lũy công đức trong 3 phút</p>
+      <p class="overlay-sub">tích lũy công đức trong hơn 1 phút</p>
       <button class="g-btn" @click="startGame">🙏 Bắt đầu</button>
       <a class="home-link" href="https://vibe.j2team.org" target="_blank" rel="noopener"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:6px;margin-bottom:2px"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>Trang chủ</a>
     </div>
@@ -51,7 +57,13 @@
       <div class="overlay-title">🙏 Hết giờ!</div>
       <p class="overlay-label">Công đức tích được</p>
       <div class="overlay-score">{{ score }}</div>
+      <div class="best-score-row">
+        <span class="best-icon">🏆</span>
+        <span class="best-label">Cao nhất:</span>
+        <span class="best-val">{{ bestScore ?? 0 }}</span>
+      </div>
       <button class="g-btn" @click="restartGame">↩ Chơi lại</button>
+      <a class="home-link" href="https://vibe.j2team.org" target="_blank" rel="noopener"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:6px;margin-bottom:2px"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>Trang chủ</a>
     </div>
   </div>
   </div>
@@ -79,14 +91,16 @@ interface Bowl { x: number; y: number; w: number; h: number }
 
 // ── Canvas & kích thước ──────────────────────────────────────
 const canvasRef = ref<HTMLCanvasElement | null>(null)
+const scIframe  = ref<HTMLIFrameElement | null>(null)
 const W = 480, H = 580
 
 // ── State ────────────────────────────────────────────────────
 const score    = ref(0)
-const timeLeft = ref(180)
+const timeLeft = ref(90)
 const screen   = ref<'start' | 'playing' | 'end'>('start')
 const muted    = ref(false)
-const paused   = ref(false)
+const paused    = ref(false)
+const bestScore = ref<number | null>(null)
 
 const timerDisplay = computed(() => {
   const m = Math.floor(timeLeft.value / 60)
@@ -108,8 +122,8 @@ let bowl:      Bowl          = { x: W / 2, y: H - 55, w: 76, h: 28 }
 // ── Audio ────────────────────────────────────────────────────
 let audioCtx:   AudioContext | null = null
 let masterGain: GainNode | null     = null
-let bgGain:     GainNode | null     = null
-const bgNodes:  OscillatorNode[]    = []
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let scWidget:   any                 = null
 
 function ensureAudio(): void {
   if (audioCtx) return
@@ -119,42 +133,31 @@ function ensureAudio(): void {
   masterGain = audioCtx.createGain()
   masterGain.gain.value = 1
   masterGain.connect(audioCtx.destination)
-  bgGain = audioCtx.createGain()
-  bgGain.gain.value = 0.18
-  bgGain.connect(masterGain)
-  startBgMusic()
+  initScWidget()
 }
 
-function startBgMusic(): void {
-  if (!audioCtx || !bgGain) return
-  ;[130.81, 196.00, 261.63].forEach((freq, i) => {
-    const osc = audioCtx!.createOscillator()
-    const g   = audioCtx!.createGain()
-    osc.type            = 'sine'
-    osc.frequency.value = freq + i * 0.3
-    g.gain.value        = i === 0 ? 0.55 : 0.25
-    osc.connect(g); g.connect(bgGain!); osc.start(); bgNodes.push(osc)
-
-    const lfo  = audioCtx!.createOscillator()
-    const lfoG = audioCtx!.createGain()
-    lfo.frequency.value = 0.12 + i * 0.07
-    lfoG.gain.value     = 0.08
-    lfo.connect(lfoG); lfoG.connect(g.gain); lfo.start(); bgNodes.push(lfo)
+function initScWidget(): void {
+  const iframe = scIframe.value
+  if (!iframe) return
+  const SC = (window as unknown as Record<string, unknown>)['SC'] as Record<string, unknown> | undefined
+  if (!SC) return
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const SCWidget = (SC as any).Widget
+  scWidget = SCWidget(iframe)
+  scWidget.bind(SCWidget.Events.READY, () => {
+    scWidget.setVolume(10)
+    if (!muted.value) scWidget.play()
   })
-  const b  = audioCtx.createOscillator()
-  const bG = audioCtx.createGain()
-  b.type = 'sine'; b.frequency.value = 523.25; bG.gain.value = 0.12
-  b.connect(bG); bG.connect(bgGain); b.start(); bgNodes.push(b)
-  scheduleBell()
 }
 
-function scheduleBell(): void {
-  if (!audioCtx) return
-  setTimeout(() => {
-    playBellNote([392, 523.25, 659.25][Math.floor(Math.random() * 3)]!, 0.09, 2.2)
-    scheduleBell()
-  }, (6 + Math.random() * 8) * 1000)
+function scPlay(): void {
+  if (scWidget && !muted.value) scWidget.play()
 }
+
+function scPause(): void {
+  if (scWidget) scWidget.pause()
+}
+
 
 function playBellNote(freq: number, vol: number, dur: number): void {
   if (!audioCtx || !masterGain || muted.value) return
@@ -207,19 +210,21 @@ function playEndBell(): void {
 
 function toggleMute(): void {
   muted.value = !muted.value
-  if (masterGain) masterGain.gain.value = muted.value ? 0 : 1
+  if (muted.value) {
+    scPause()
+  } else {
+    scPlay()
+  }
 }
 
 function togglePause(): void {
   if (screen.value !== 'playing') return
   paused.value = !paused.value
   if (paused.value) {
-    // Mute background when paused
-    if (masterGain) masterGain.gain.value = 0
+    scPause()
   } else {
-    // Resume: shift startTime forward by time spent paused
     if (startTime !== null) startTime += performance.now() - pausedAt
-    if (masterGain) masterGain.gain.value = muted.value ? 0 : 1
+    if (!muted.value) scPlay()
   }
 }
 
@@ -231,7 +236,7 @@ const CANOPY = [
   { x: 30,  y: 110 }, { x: 220, y: 100 }, { x: 80,  y: 130 }, { x: 160, y: 110 },
 ]
 
-function getSpeedMult(): number { return 1 + Math.min((180 - timeLeft.value) / 60, 2.5) }
+function getSpeedMult(): number { return 1.6 + Math.min((90 - timeLeft.value) / 30, 2.0) }
 
 function spawnLeaf(): void {
   const src = CANOPY[Math.floor(Math.random() * CANOPY.length)]!
@@ -239,7 +244,7 @@ function spawnLeaf(): void {
   const sm  = getSpeedMult()
   leaves.push({
     x: src.x + rnd(-20, 20), y: src.y + rnd(-10, 20),
-    vx: rnd(-0.8, 0.8),      vy: rnd(0.5, 1.1) * sm,
+    vx: rnd(-0.8, 0.8),      vy: rnd(0.9, 1.6) * sm,
     rot: rnd(0, Math.PI * 2), rotV: rnd(-0.03, 0.03),
     w: rnd(22, 30),           h: rnd(14, 20),
     wave: rnd(0, Math.PI * 2), waveSpd: rnd(0.015, 0.03),
@@ -457,7 +462,8 @@ function drawFloats(): void {
   const c = ctx!
   floats = floats.filter(f => f.a > 0)
   floats.forEach(f => {
-    c.save(); c.globalAlpha = f.a; c.fillStyle = '#FFD700'
+    c.save(); c.globalAlpha = f.a
+    c.fillStyle = f.txt.startsWith('-') ? '#ff6b6b' : '#FFD700'
     c.font = `bold ${f.size}px serif`; c.textAlign = 'center'
     c.fillText(f.txt, f.x, f.y); c.restore()
     f.y -= 0.8; f.a -= 0.02
@@ -488,14 +494,14 @@ function checkCatch(l: Leaf): boolean {
 // ── Game loop ────────────────────────────────────────────────
 function updateTimer(now: number): void {
   if (!startTime) startTime = now
-  timeLeft.value = Math.max(0, 180 - (now - startTime) / 1000)
+  timeLeft.value = Math.max(0, 90 - (now - startTime) / 1000)
   if (timeLeft.value <= 0) endGame()
 }
 
 function update(now: number): void {
   if (screen.value !== 'playing' || paused.value) return
   updateTimer(now)
-  const spawnRate = Math.max(20, 75 - Math.floor((180 - timeLeft.value) / 5) * 3)
+  const spawnRate = Math.max(15, 60 - Math.floor((90 - timeLeft.value) / 3) * 3)
   if (frame % spawnRate === 0 || leaves.length < 3) spawnLeaf()
   leaves.forEach(l => {
     if (l.dying) { l.alpha -= 0.08; return }
@@ -509,7 +515,12 @@ function update(now: number): void {
       playTing(); addSparks(l.x, l.y)
       floats.push({ txt: '+1 ✦', x: l.x, y: l.y - 20, a: 1, size: 16 })
     }
-    if (l.y > H + 40) l.alpha = 0
+    if (!l.caught && !l.dying && l.y > H + 40) {
+      l.dying = true
+      score.value = score.value - 1
+      floats.push({ txt: '-1', x: l.x, y: H - 60, a: 1, size: 14 })
+    }
+    if (l.dying && l.y > H + 40) l.alpha = 0
   })
   leaves = leaves.filter(l => l.alpha > 0)
 }
@@ -545,10 +556,12 @@ function loop(now: number): void {
 function startGame(): void {
   ensureAudio()
   screen.value = 'playing'
+  setTimeout(() => { if (!muted.value) scPlay() }, 300)
 }
 
 function endGame(): void {
   if (screen.value === 'end') return
+  if (bestScore.value === null || score.value > bestScore.value) bestScore.value = score.value
   screen.value = 'end'
   playEndBell()
 }
@@ -556,10 +569,11 @@ function endGame(): void {
 function restartGame(): void {
   ensureAudio()
   paused.value = false
-  score.value = 0; frame = 0; timeLeft.value = 180; startTime = null
+  score.value = 0; frame = 0; timeLeft.value = 90; startTime = null
   leaves = []; sparks = []; floats = []
   bowl   = { x: W / 2, y: H - 55, w: 76, h: 28 }
   screen.value = 'playing'
+  setTimeout(() => { if (!muted.value) scPlay() }, 100)
 }
 
 // ── Lifecycle ────────────────────────────────────────────────
@@ -601,6 +615,14 @@ onMounted(() => {
   canvas.addEventListener('touchmove',  onTouchMove,  { passive: false })
   canvas.addEventListener('touchstart', onTouchStart, { passive: false })
   window.addEventListener('keydown', onKeyDown)
+  // Load SoundCloud Widget API
+  const existingSC = (window as unknown as Record<string, unknown>)['SC']
+  if (!existingSC) {
+    const s = document.createElement('script')
+    s.src = 'https://w.soundcloud.com/player/api.js'
+    s.addEventListener('load', () => { if (audioCtx) initScWidget() })
+    document.head.appendChild(s)
+  }
   rafId = requestAnimationFrame(loop)
 })
 
@@ -614,7 +636,7 @@ onUnmounted(() => {
     canvas.removeEventListener('touchstart', onTouchStart)
   }
   window.removeEventListener('keydown', onKeyDown)
-  bgNodes.forEach(n => { try { n.stop() } catch { /* already stopped */ } })
+  scPause()
   if (audioCtx) audioCtx.close()
 })
 </script>
@@ -822,5 +844,25 @@ canvas {
   .overlay-sub    { display: none; }
   .g-btn          { padding: 7px 24px; margin-top: 6px; min-height: 40px; }
   .home-link      { padding: 6px 16px; margin-top: 8px; min-height: 40px; }
+}
+
+.best-score-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 16px;
+  color: #c8a05a;
+  font-family: serif;
+  font-size: clamp(13px, 3.5vw, 15px);
+}
+
+.best-icon { font-size: 16px; }
+
+.best-label { opacity: 0.8; }
+
+.best-val {
+  color: #ffd700;
+  font-weight: bold;
+  font-size: clamp(15px, 4vw, 18px);
 }
 </style>
