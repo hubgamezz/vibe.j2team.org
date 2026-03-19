@@ -187,7 +187,7 @@ function playEndBell(): void {
 
 function toggleMute(): void {
   muted.value = !muted.value
-  muted.value ? scPause() : scPlay()
+  if (muted.value) { scPause() } else { scPlay() }
 }
 
 function togglePause(): void {
